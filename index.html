@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E-SMART Scanner LJK Evalbee</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f5f9;
+      --card: #ffffff;
+      --text: #1f2a44;
+      --sub: #5c6783;
+      --primary: #145af2;
+      --primary-hover: #0f48c0;
+      --border: #d9dfec;
+      --success: #0b8457;
+      --warn: #b45309;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      width: min(1200px, 95vw);
+      margin: 2rem auto;
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 340px 1fr;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 6px 22px rgba(20, 40, 80, 0.06);
+    }
+
+    h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+    h2 { margin: 0 0 0.4rem; font-size: 1rem; }
+    p { color: var(--sub); font-size: 0.92rem; }
+
+    .controls {
+      display: grid;
+      gap: 0.7rem;
+    }
+
+    label {
+      display: grid;
+      gap: 0.35rem;
+      font-size: 0.86rem;
+      color: var(--sub);
+    }
+
+    input[type="file"], button {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+      font-size: 0.92rem;
+      background: white;
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover { background: var(--primary-hover); }
+    button.secondary {
+      background: white;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .status {
+      border-left: 4px solid var(--primary);
+      background: #ecf2ff;
+      color: #11326f;
+      border-radius: 8px;
+      padding: 0.65rem 0.8rem;
+      font-size: 0.88rem;
+    }
+
+    .status.warn {
+      border-left-color: var(--warn);
+      background: #fff7ed;
+      color: #8a4000;
+    }
+
+    .status.success {
+      border-left-color: var(--success);
+      background: #ecfdf3;
+      color: #065f46;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .preview {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .preview strong {
+      font-size: 0.86rem;
+      color: var(--sub);
+    }
+
+    canvas, video, img {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      min-height: 160px;
+      object-fit: contain;
+    }
+
+    .footer {
+      font-size: 0.8rem;
+      color: var(--sub);
+      margin-top: 0.5rem;
+    }
+
+    @media (max-width: 880px) {
+      .container { grid-template-columns: 1fr; }
+      .preview-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="card controls">
+      <div>
+        <h1>E-SMART LJK Scanner</h1>
+        <p>Halaman siap deploy ke GitHub Pages untuk scan LJK Evalbee dari paper feeder (kamera) atau upload scan.</p>
+      </div>
+
+      <label>
+        Upload Template LJK (untuk kalibrasi)
+        <input id="templateInput" type="file" accept="image/*" />
+      </label>
+
+      <label>
+        Upload Scan LJK
+        <input id="sheetInput" type="file" accept="image/*" />
+      </label>
+
+      <button id="startCameraBtn" class="secondary">Mulai Paper Feeder (Kamera)</button>
+      <button id="captureBtn" class="secondary" disabled>Ambil Frame dari Feeder</button>
+      <button id="stopCameraBtn" class="secondary" disabled>Stop Feeder</button>
+
+      <button id="processBtn" disabled>Scan & Koreksi Otomatis</button>
+      <button id="downloadBtn" class="secondary" disabled>Download Hasil PNG</button>
+
+      <div id="status" class="status">Menunggu OpenCV.js siap...</div>
+
+      <div class="footer">
+        Fitur: deteksi kotak pojok template, auto deskew/perspective, sensor atas-bawah untuk auto rotate.
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="preview-grid">
+        <div class="preview">
+          <strong>Feed Kamera (Paper Feeder)</strong>
+          <video id="video" autoplay playsinline muted></video>
+        </div>
+        <div class="preview">
+          <strong>Scan Input</strong>
+          <img id="inputPreview" alt="Pratinjau scan input" />
+        </div>
+        <div class="preview">
+          <strong>Template</strong>
+          <img id="templatePreview" alt="Pratinjau template" />
+        </div>
+        <div class="preview">
+          <strong>Hasil Normalisasi</strong>
+          <canvas id="outputCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <script>
+    const state = {
+      cvReady: false,
+      templateImage: null,
+      sheetImage: null,
+      stream: null,
+      orientationDeg: 0,
+    };
+
+    const el = {
+      templateInput: document.getElementById('templateInput'),
+      sheetInput: document.getElementById('sheetInput'),
+      startCameraBtn: document.getElementById('startCameraBtn'),
+      captureBtn: document.getElementById('captureBtn'),
+      stopCameraBtn: document.getElementById('stopCameraBtn'),
+      processBtn: document.getElementById('processBtn'),
+      downloadBtn: document.getElementById('downloadBtn'),
+      status: document.getElementById('status'),
+      video: document.getElementById('video'),
+      inputPreview: document.getElementById('inputPreview'),
+      templatePreview: document.getElementById('templatePreview'),
+      outputCanvas: document.getElementById('outputCanvas'),
+    };
+
+    const setStatus = (message, type = 'info') => {
+      el.status.textContent = message;
+      el.status.className = `status${type === 'info' ? '' : ' ' + type}`;
+    };
+
+    const readFileAsImage = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Gagal membaca gambar'));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error('Gagal membaca file'));
+      reader.readAsDataURL(file);
+    });
+
+    const enableProcessIfReady = () => {
+      el.processBtn.disabled = !(state.cvReady && state.sheetImage);
+    };
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('Browser tidak mendukung akses kamera.', 'warn');
+        return;
+      }
+      try {
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+        el.video.srcObject = state.stream;
+        el.captureBtn.disabled = false;
+        el.stopCameraBtn.disabled = false;
+        setStatus('Paper feeder aktif. Siapkan lembar LJK di depan kamera.', 'success');
+      } catch (error) {
+        setStatus(`Gagal akses feeder: ${error.message}`, 'warn');
+      }
+    };
+
+    const stopCamera = () => {
+      if (state.stream) {
+        state.stream.getTracks().forEach((track) => track.stop());
+        state.stream = null;
+      }
+      el.video.srcObject = null;
+      el.captureBtn.disabled = true;
+      el.stopCameraBtn.disabled = true;
+    };
+
+    const captureFrame = () => {
+      if (!el.video.videoWidth) {
+        setStatus('Video feeder belum siap.', 'warn');
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = el.video.videoWidth;
+      canvas.height = el.video.videoHeight;
+      canvas.getContext('2d').drawImage(el.video, 0, 0);
+      const img = new Image();
+      img.onload = () => {
+        state.sheetImage = img;
+        el.inputPreview.src = img.src;
+        enableProcessIfReady();
+        setStatus('Frame feeder berhasil diambil. Lanjutkan scan otomatis.', 'success');
+      };
+      img.src = canvas.toDataURL('image/png');
+    };
+
+    const orderCorners = (points) => {
+      const sorted = points.slice().sort((a, b) => a.y - b.y);
+      const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
+      const bottom = sorted.slice(2).sort((a, b) => a.x - b.x);
+      return [top[0], top[1], bottom[1], bottom[0]];
+    };
+
+    const rotateCanvas180 = (srcCanvas) => {
+      const out = document.createElement('canvas');
+      out.width = srcCanvas.width;
+      out.height = srcCanvas.height;
+      const ctx = out.getContext('2d');
+      ctx.translate(out.width, out.height);
+      ctx.rotate(Math.PI);
+      ctx.drawImage(srcCanvas, 0, 0);
+      return out;
+    };
+
+    const detectCornerBoxCenters = (grayMat) => {
+      const w = grayMat.cols;
+      const h = grayMat.rows;
+      const regions = [
+        { x: 0, y: 0, w: Math.floor(w * 0.18), h: Math.floor(h * 0.18) },
+        { x: Math.floor(w * 0.82), y: 0, w: Math.floor(w * 0.18), h: Math.floor(h * 0.18) },
+        { x: Math.floor(w * 0.82), y: Math.floor(h * 0.82), w: Math.floor(w * 0.18), h: Math.floor(h * 0.18) },
+        { x: 0, y: Math.floor(h * 0.82), w: Math.floor(w * 0.18), h: Math.floor(h * 0.18) },
+      ];
+
+      const centers = [];
+      for (const r of regions) {
+        const roi = grayMat.roi(new cv.Rect(r.x, r.y, r.w, r.h));
+        const bin = new cv.Mat();
+        cv.threshold(roi, bin, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+        const contours = new cv.MatVector();
+        const hierarchy = new cv.Mat();
+        cv.findContours(bin, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let best = { area: 0, cx: r.x + r.w / 2, cy: r.y + r.h / 2 };
+        for (let i = 0; i < contours.size(); i++) {
+          const cnt = contours.get(i);
+          const area = cv.contourArea(cnt);
+          if (area > best.area) {
+            const m = cv.moments(cnt);
+            if (m.m00 !== 0) {
+              best = { area, cx: r.x + m.m10 / m.m00, cy: r.y + m.m01 / m.m00 };
+            }
+          }
+          cnt.delete();
+        }
+
+        centers.push({ x: best.cx, y: best.cy });
+        roi.delete();
+        bin.delete();
+        contours.delete();
+        hierarchy.delete();
+      }
+      return centers;
+    };
+
+    const autoScan = () => {
+      if (!state.cvReady || !state.sheetImage) return;
+
+      const src = cv.imread(state.sheetImage);
+      const gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      const blur = new cv.Mat();
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      const edged = new cv.Mat();
+      cv.Canny(blur, edged, 70, 200);
+
+      const contours = new cv.MatVector();
+      const hierarchy = new cv.Mat();
+      cv.findContours(edged, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+      let bestQuad = null;
+      let bestArea = 0;
+      for (let i = 0; i < contours.size(); i++) {
+        const cnt = contours.get(i);
+        const peri = cv.arcLength(cnt, true);
+        const approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+        if (approx.rows === 4) {
+          const area = Math.abs(cv.contourArea(approx));
+          if (area > bestArea) {
+            bestArea = area;
+            bestQuad = [];
+            for (let j = 0; j < 4; j++) {
+              bestQuad.push({ x: approx.intPtr(j, 0)[0], y: approx.intPtr(j, 0)[1] });
+            }
+          }
+        }
+        approx.delete();
+        cnt.delete();
+      }
+
+      let normalizedCanvas = document.createElement('canvas');
+      if (!bestQuad) {
+        setStatus('Kontur lembar tidak ditemukan. Menampilkan input asli.', 'warn');
+        normalizedCanvas.width = state.sheetImage.width;
+        normalizedCanvas.height = state.sheetImage.height;
+        normalizedCanvas.getContext('2d').drawImage(state.sheetImage, 0, 0);
+      } else {
+        const corners = orderCorners(bestQuad);
+        const width = 1200;
+        const height = 1700;
+
+        const srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          corners[0].x, corners[0].y,
+          corners[1].x, corners[1].y,
+          corners[2].x, corners[2].y,
+          corners[3].x, corners[3].y,
+        ]);
+        const dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          0, 0,
+          width - 1, 0,
+          width - 1, height - 1,
+          0, height - 1,
+        ]);
+
+        const M = cv.getPerspectiveTransform(srcTri, dstTri);
+        const warped = new cv.Mat();
+        cv.warpPerspective(src, warped, M, new cv.Size(width, height));
+
+        normalizedCanvas = document.createElement('canvas');
+        normalizedCanvas.width = width;
+        normalizedCanvas.height = height;
+        cv.imshow(normalizedCanvas, warped);
+
+        srcTri.delete();
+        dstTri.delete();
+        M.delete();
+        warped.delete();
+      }
+
+      const orientedCanvas = document.createElement('canvas');
+      orientedCanvas.width = normalizedCanvas.width;
+      orientedCanvas.height = normalizedCanvas.height;
+      orientedCanvas.getContext('2d').drawImage(normalizedCanvas, 0, 0);
+
+      const currentMat = cv.imread(orientedCanvas);
+      const currentGray = new cv.Mat();
+      cv.cvtColor(currentMat, currentGray, cv.COLOR_RGBA2GRAY);
+
+      let rotate180 = false;
+
+      if (state.templateImage) {
+        const templateCanvas = document.createElement('canvas');
+        templateCanvas.width = normalizedCanvas.width;
+        templateCanvas.height = normalizedCanvas.height;
+        templateCanvas.getContext('2d').drawImage(state.templateImage, 0, 0, normalizedCanvas.width, normalizedCanvas.height);
+
+        const templateMat = cv.imread(templateCanvas);
+        const templateGray = new cv.Mat();
+        cv.cvtColor(templateMat, templateGray, cv.COLOR_RGBA2GRAY);
+
+        const detectedCorners = detectCornerBoxCenters(currentGray);
+        const templateCorners = detectCornerBoxCenters(templateGray);
+
+        const sourcePts = cv.matFromArray(4, 1, cv.CV_32FC2, detectedCorners.flatMap((p) => [p.x, p.y]));
+        const destPts = cv.matFromArray(4, 1, cv.CV_32FC2, templateCorners.flatMap((p) => [p.x, p.y]));
+        const H = cv.getPerspectiveTransform(sourcePts, destPts);
+        const aligned = new cv.Mat();
+        cv.warpPerspective(currentMat, aligned, H, new cv.Size(normalizedCanvas.width, normalizedCanvas.height));
+        cv.imshow(orientedCanvas, aligned);
+
+        const alignedGray = new cv.Mat();
+        cv.cvtColor(aligned, alignedGray, cv.COLOR_RGBA2GRAY);
+
+        const rotatedCanvas = rotateCanvas180(orientedCanvas);
+        const rotatedMat = cv.imread(rotatedCanvas);
+        const rotatedGray = new cv.Mat();
+        cv.cvtColor(rotatedMat, rotatedGray, cv.COLOR_RGBA2GRAY);
+
+        const diffNormal = new cv.Mat();
+        const diffRotated = new cv.Mat();
+        cv.absdiff(alignedGray, templateGray, diffNormal);
+        cv.absdiff(rotatedGray, templateGray, diffRotated);
+        const scoreNormal = cv.mean(diffNormal)[0];
+        const scoreRotated = cv.mean(diffRotated)[0];
+
+        rotate180 = scoreRotated + 1.5 < scoreNormal;
+
+        sourcePts.delete();
+        destPts.delete();
+        H.delete();
+        aligned.delete();
+        alignedGray.delete();
+        rotatedMat.delete();
+        rotatedGray.delete();
+        diffNormal.delete();
+        diffRotated.delete();
+        templateMat.delete();
+        templateGray.delete();
+      } else {
+        const topRect = currentGray.roi(new cv.Rect(0, 0, currentGray.cols, Math.floor(currentGray.rows * 0.12)));
+        const bottomRect = currentGray.roi(new cv.Rect(0, Math.floor(currentGray.rows * 0.88), currentGray.cols, Math.floor(currentGray.rows * 0.12)));
+
+        const topEdge = new cv.Mat();
+        const bottomEdge = new cv.Mat();
+        cv.Canny(topRect, topEdge, 50, 150);
+        cv.Canny(bottomRect, bottomEdge, 50, 150);
+
+        const topDensity = cv.countNonZero(topEdge) / (topEdge.rows * topEdge.cols);
+        const bottomDensity = cv.countNonZero(bottomEdge) / (bottomEdge.rows * bottomEdge.cols);
+        rotate180 = bottomDensity > topDensity * 1.15;
+
+        topRect.delete();
+        bottomRect.delete();
+        topEdge.delete();
+        bottomEdge.delete();
+      }
+
+      const finalCanvas = rotate180 ? rotateCanvas180(orientedCanvas) : orientedCanvas;
+      state.orientationDeg = rotate180 ? 180 : 0;
+      el.outputCanvas.width = finalCanvas.width;
+      el.outputCanvas.height = finalCanvas.height;
+      el.outputCanvas.getContext('2d').drawImage(finalCanvas, 0, 0);
+
+      const info = state.templateImage
+        ? `Scan selesai. Template + sensor kotak pojok aktif. Rotasi auto: ${state.orientationDeg}°.`
+        : `Scan selesai. Sensor atas-bawah aktif tanpa template. Rotasi auto: ${state.orientationDeg}°.`;
+      setStatus(info, 'success');
+      el.downloadBtn.disabled = false;
+
+      src.delete();
+      gray.delete();
+      blur.delete();
+      edged.delete();
+      contours.delete();
+      hierarchy.delete();
+      currentMat.delete();
+      currentGray.delete();
+    };
+
+    el.templateInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      state.templateImage = await readFileAsImage(file);
+      el.templatePreview.src = state.templateImage.src;
+      setStatus('Template berhasil dimuat. Kalibrasi kotak pojok akan dipakai.', 'success');
+    });
+
+    el.sheetInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      state.sheetImage = await readFileAsImage(file);
+      el.inputPreview.src = state.sheetImage.src;
+      enableProcessIfReady();
+      setStatus('Scan LJK dimuat. Klik Scan & Koreksi Otomatis.', 'success');
+    });
+
+    el.startCameraBtn.addEventListener('click', startCamera);
+    el.captureBtn.addEventListener('click', captureFrame);
+    el.stopCameraBtn.addEventListener('click', stopCamera);
+    el.processBtn.addEventListener('click', autoScan);
+
+    el.downloadBtn.addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = el.outputCanvas.toDataURL('image/png');
+      a.download = 'hasil-scan-ljk.png';
+      a.click();
+    });
+
+    window.Module = {
+      onRuntimeInitialized() {
+        state.cvReady = true;
+        enableProcessIfReady();
+        setStatus('OpenCV.js siap. Upload scan atau gunakan feeder kamera.', 'success');
+      }
+    };
+  </script>
+</body>
+</html>
